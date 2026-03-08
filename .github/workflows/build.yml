@@ -22,9 +22,13 @@ jobs:
         with:
           flutter-version: "3.19.0"
 
-      # 1. Ye Action khali repo mein Android aur baki files banayega
+      # 1. Khali repo mein Android aur baki files banayega
       - name: Generate Flutter Boilerplate
         run: flutter create --project-name gaming_tool --org com.raaz.gaming .
+
+      # 🛠️ NEW FIX: Shizuku ko API 23 chahiye. Ye step automatically app ka minSdk 23 kar dega
+      - name: Fix minSdkVersion for Shizuku
+        run: sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/g' android/app/build.gradle
 
       # 2. Ye Gradle mein bina error ke Shizuku API dal dega
       - name: Inject Shizuku API into build.gradle
@@ -43,7 +47,7 @@ jobs:
       - name: Copy Custom MainActivity
         run: cp MainActivity_custom.kt android/app/src/main/kotlin/com/raaz/gaming/MainActivity.kt
 
-      # 5. Build Final APK!
+      # 5. Build Final Release APK!
       - name: Install Dependencies & Build
         run: |
           flutter pub get
