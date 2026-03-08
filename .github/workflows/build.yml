@@ -26,16 +26,16 @@ jobs:
       - name: Generate Flutter Boilerplate
         run: flutter create --project-name gaming_tool --org com.raaz.gaming .
 
-      # 🛠️ AAKHRI FIX: Shizuku ko API 24 chahiye. Ye step automatically app ka minSdk 24 kar dega!
-      - name: Fix minSdkVersion for Shizuku (API 24)
-        run: sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/g' android/app/build.gradle
+      # 2. Set minSdk to 23 for stability
+      - name: Fix minSdkVersion for Shizuku
+        run: sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/g' android/app/build.gradle
 
-      # 2. Ye Gradle mein bina error ke Shizuku API dal dega
+      # 🛠️ YAHAN FIX HAI: Humne version 12.1.0 use kiya hai jisme 'newProcess' allowed hai!
       - name: Inject Shizuku API into build.gradle
         run: |
           echo "dependencies {" >> android/app/build.gradle
-          echo "    implementation 'dev.rikka.shizuku:api:13.1.5'" >> android/app/build.gradle
-          echo "    implementation 'dev.rikka.shizuku:provider:13.1.5'" >> android/app/build.gradle
+          echo "    implementation 'dev.rikka.shizuku:api:12.1.0'" >> android/app/build.gradle
+          echo "    implementation 'dev.rikka.shizuku:provider:12.1.0'" >> android/app/build.gradle
           echo "}" >> android/app/build.gradle
 
       # 3. Ye AndroidManifest mein zaroori permissions auto-inject karega
