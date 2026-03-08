@@ -41,8 +41,7 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _startAutoSlider();
-    // 🛠️ YAHAN FIX HAI: App open hote hi auto-connect trigger hoga!
-    _autoConnectShizuku(); 
+    _autoDetectAndConnectShizuku(); // 🔥 PRO-LEVEL AUTO DETECT
   }
 
   @override
@@ -59,46 +58,43 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  // 🔥 NAYA MAGIC CODE: Ye app open hote hi Shizuku ka popup layega
-  Future<void> _autoConnectShizuku() async {
+  // 🛠️ YAHAN NAYA LOGIC HAI: Pehle Service Detect, Phir Permission Handle
+  Future<void> _autoDetectAndConnectShizuku() async {
     try {
+      // 1. Check if Shizuku Service (Binder) is actually alive
+      final bool isServiceRunning = await platform.invokeMethod('isShizukuServiceRunning');
+      
+      if (!isServiceRunning) {
+        setState(() => isShizukuConnected = false);
+        _showSnackBar("❌ Shizuku Service is stopped. Please start it.", Colors.red);
+        return;
+      }
+
+      // 2. Service chal rahi hai, ab permission check karo
       final bool hasPermission = await platform.invokeMethod('checkPermission');
       if (hasPermission) {
         setState(() => isShizukuConnected = true);
       } else {
-        // Agar permission nahi hai, toh seedha Popup screen par laao!
-        await platform.invokeMethod('requestPermission');
-        
-        // Smart Listener: Har 1 second mein check karega ki user ne "Allow" dabaya ya nahi
-        int attempts = 0;
-        Timer.periodic(const Duration(seconds: 1), (timer) async {
-          attempts++;
-          final bool granted = await platform.invokeMethod('checkPermission');
-          if (granted) {
-            setState(() => isShizukuConnected = true);
-            _showSnackBar("⚡ Shizuku Connected Successfully!", Colors.green);
-            timer.cancel(); // Connected! Timer band karo
-          } else if (attempts >= 15) {
-            timer.cancel(); // 15 seconds tak wait karega, fir cancel kar dega
-          }
-        });
+        // 3. Agar permission nahi hai, toh Native Kotlin method ko bulao
+        // Ye method tab tak wait karega jab tak user popup pe tap nahi karta!
+        final bool granted = await platform.invokeMethod('requestPermission');
+        if (granted) {
+          setState(() => isShizukuConnected = true);
+          _showSnackBar("⚡ Shizuku Connected Successfully!", Colors.green);
+        } else {
+          _showSnackBar("⚠️ Permission Denied by User!", Colors.orange);
+        }
       }
     } catch (e) {
       setState(() => isShizukuConnected = false);
-      _showSnackBar("❌ Shizuku background mein nahi chal raha!", Colors.red);
+      _showSnackBar("❌ Failed to communicate with Shizuku", Colors.red);
     }
-  }
-
-  // Backup Manual Button (Agar user ne galti se popup cancel kar diya)
-  Future<void> _manualConnect() async {
-    _autoConnectShizuku();
   }
 
   Future<void> handleIpadView(bool enable) async {
     if (!isShizukuConnected && enable) {
       setState(() => ipad = false);
-      _showSnackBar("❌ Shizuku allow karein pehle!", Colors.red);
-      _autoConnectShizuku(); // Dobara popup layega
+      _autoDetectAndConnectShizuku(); // Auto try again
       return;
     }
     
@@ -188,14 +184,14 @@ class _HomePageState extends State<HomePage> {
         padding: const EdgeInsets.all(16.0),
         children: [
           GestureDetector(
-            onTap: _manualConnect,
+            onTap: _autoDetectAndConnectShizuku,
             child: Container(
               margin: const EdgeInsets.only(bottom: 20), padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(color: isShizukuConnected ? Colors.green.withOpacity(0.2) : Colors.redAccent.withOpacity(0.2), borderRadius: BorderRadius.circular(16), border: Border.all(color: isShizukuConnected ? Colors.green : Colors.redAccent)),
               child: Row(children: [
                 Icon(isShizukuConnected ? Icons.check_circle : Icons.warning_rounded, color: isShizukuConnected ? Colors.green : Colors.redAccent, size: 30),
                 const SizedBox(width: 12),
-                Expanded(child: Text(isShizukuConnected ? "Shizuku Connected! Ready to apply." : "Tap here to connect Shizuku", style: TextStyle(color: isDarkMode ? Colors.white : Colors.black, fontWeight: FontWeight.bold))),
+                Expanded(child: Text(isShizukuConnected ? "Shizuku Connected! Ready to apply." : "Shizuku is disconnected. Tap to retry.", style: TextStyle(color: isDarkMode ? Colors.white : Colors.black, fontWeight: FontWeight.bold))),
               ]),
             ),
           ),
