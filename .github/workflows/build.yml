@@ -26,7 +26,11 @@ jobs:
       - name: Generate Flutter Boilerplate
         run: flutter create --project-name gaming_tool --org com.raaz.gaming .
 
-      # 2. Shizuku API inject
+      # 2. Min SDK Fix (API 24 for Shizuku)
+      - name: Fix minSdkVersion for Shizuku
+        run: sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/g' android/app/build.gradle
+
+      # 3. Shizuku API inject
       - name: Inject Shizuku API into build.gradle
         run: |
           echo "dependencies {" >> android/app/build.gradle
@@ -34,13 +38,17 @@ jobs:
           echo "    implementation 'dev.rikka.shizuku:provider:12.1.0'" >> android/app/build.gradle
           echo "}" >> android/app/build.gradle
 
-      # 🛠️ 3. YAHAN FIX HAI: Custom MainActivity ko bilkul sahi folder mein bheja ja raha hai
-      - name: Copy Custom MainActivity
+      # 🛠️ 4. YAHAN FIX HAI: Delete All Duplicates Before Copying!
+      - name: Copy Custom MainActivity & Remove Duplicates
         run: |
+          # Pehle se maujood kisi bhi MainActivity ko delete karo
+          find android/app/src/main/kotlin/ -name "MainActivity.kt" -type f -delete
+          
+          # Sahi folder banao aur custom file copy karo
           mkdir -p android/app/src/main/kotlin/com/raaz/gaming/gaming_tool/
           cp MainActivity_custom.kt android/app/src/main/kotlin/com/raaz/gaming/gaming_tool/MainActivity.kt
 
-      # 4. Final Build!
+      # 5. Final Build!
       - name: Install Dependencies & Build
         run: |
           flutter pub get
