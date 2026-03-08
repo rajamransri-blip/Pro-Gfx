@@ -30,7 +30,6 @@ class _HomePageState extends State<HomePage> {
     "https://images.unsplash.com/photo-1552820728-8b83bb6b773f?auto=format&fit=crop&w=800&q=80",
     "https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=800&q=80"
   ];
-  final String feedbackImageUrl = "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=800&q=80";
   
   final PageController _pageController = PageController();
   int _currentPage = 0;
@@ -42,7 +41,8 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _startAutoSlider();
-    _checkShizukuStatus();
+    // 🛠️ YAHAN FIX HAI: App open hote hi auto-connect trigger hoga!
+    _autoConnectShizuku(); 
   }
 
   @override
@@ -59,32 +59,49 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  Future<void> _checkShizukuStatus() async {
+  // 🔥 NAYA MAGIC CODE: Ye app open hote hi Shizuku ka popup layega
+  Future<void> _autoConnectShizuku() async {
     try {
       final bool hasPermission = await platform.invokeMethod('checkPermission');
-      setState(() => isShizukuConnected = hasPermission);
+      if (hasPermission) {
+        setState(() => isShizukuConnected = true);
+      } else {
+        // Agar permission nahi hai, toh seedha Popup screen par laao!
+        await platform.invokeMethod('requestPermission');
+        
+        // Smart Listener: Har 1 second mein check karega ki user ne "Allow" dabaya ya nahi
+        int attempts = 0;
+        Timer.periodic(const Duration(seconds: 1), (timer) async {
+          attempts++;
+          final bool granted = await platform.invokeMethod('checkPermission');
+          if (granted) {
+            setState(() => isShizukuConnected = true);
+            _showSnackBar("⚡ Shizuku Connected Successfully!", Colors.green);
+            timer.cancel(); // Connected! Timer band karo
+          } else if (attempts >= 15) {
+            timer.cancel(); // 15 seconds tak wait karega, fir cancel kar dega
+          }
+        });
+      }
     } catch (e) {
       setState(() => isShizukuConnected = false);
+      _showSnackBar("❌ Shizuku background mein nahi chal raha!", Colors.red);
     }
   }
 
-  Future<void> _connectShizuku() async {
-    try {
-      await platform.invokeMethod('requestPermission');
-      await Future.delayed(const Duration(seconds: 2));
-      await _checkShizukuStatus();
-      if (isShizukuConnected) _showSnackBar("⚡ Shizuku Connected!", Colors.green);
-    } catch (e) {
-      _showSnackBar("❌ Shizuku not running in background!", Colors.red);
-    }
+  // Backup Manual Button (Agar user ne galti se popup cancel kar diya)
+  Future<void> _manualConnect() async {
+    _autoConnectShizuku();
   }
 
   Future<void> handleIpadView(bool enable) async {
     if (!isShizukuConnected && enable) {
       setState(() => ipad = false);
-      _showSnackBar("❌ Connect Shizuku First!", Colors.red);
+      _showSnackBar("❌ Shizuku allow karein pehle!", Colors.red);
+      _autoConnectShizuku(); // Dobara popup layega
       return;
     }
+    
     setState(() => isDownloading = true);
     try {
       await Permission.storage.request();
@@ -126,7 +143,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _showSnackBar(String message, Color color) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message, style: const TextStyle(color: Colors.white)), backgroundColor: color));
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)), backgroundColor: color, behavior: SnackBarBehavior.floating));
   }
 
   void _showSettingsPanel() {
@@ -171,7 +188,7 @@ class _HomePageState extends State<HomePage> {
         padding: const EdgeInsets.all(16.0),
         children: [
           GestureDetector(
-            onTap: _connectShizuku,
+            onTap: _manualConnect,
             child: Container(
               margin: const EdgeInsets.only(bottom: 20), padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(color: isShizukuConnected ? Colors.green.withOpacity(0.2) : Colors.redAccent.withOpacity(0.2), borderRadius: BorderRadius.circular(16), border: Border.all(color: isShizukuConnected ? Colors.green : Colors.redAccent)),
