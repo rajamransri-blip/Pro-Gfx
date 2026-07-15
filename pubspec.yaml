@@ -15,7 +15,10 @@ dependencies:
   path_provider: ^2.1.2
   permission_handler: ^11.3.1
   url_launcher: ^6.3.0
-  shared_preferences: ^2.2.2  # ✅ ADDED FOR SAVING UNLOCK & JSON DATA
+  shared_preferences: ^2.2.2
+  uuid: ^4.3.3
+  firebase_core: ^2.24.2
+  firebase_database: ^10.4.0
 
 dev_dependencies:
   flutter_test:
