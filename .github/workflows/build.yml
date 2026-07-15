@@ -28,20 +28,35 @@ jobs:
       - name: Fix minSdkVersion for Shizuku & Firebase
         run: sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/g' android/app/build.gradle
 
-      # ✅ 1. INJECT GOOGLE SERVICES JSON
+      # 🛠️ YAHAN FIX KIYA HAI: SMART JSON INJECTOR
       - name: Create Google Services JSON
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
-          echo "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+            echo "⚠️ Secret is empty! Creating a fallback google-services.json to prevent build failure..."
+            cat << 'EOF' > android/app/google-services.json
+            {
+              "project_info": { "project_number": "123456789012", "project_id": "dummy-project" },
+              "client": [ {
+                "client_info": {
+                  "mobilesdk_app_id": "1:123456789012:android:abcdef0123456789",
+                  "android_client_info": { "package_name": "com.raaz.gaming.gaming_tool" }
+                },
+                "oauth_client": [], "api_key": [ { "current_key": "dummy-api-key" } ],
+                "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
+              } ],
+              "configuration_version": "1"
+            }
+            EOF
+          else
+            echo "✅ Injecting Real Google Services JSON from Secrets"
+            echo "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+          fi
 
-      # 🛠️ 2. FIXED: INJECT FIREBASE & SHIZUKU TO GRADLE (BULLETPROOF METHOD)
       - name: Inject Firebase and Shizuku to Gradle
         run: |
-          # A. Root build.gradle ke ekdum top par classpath add karna
           echo -e "buildscript {\n    repositories {\n        google()\n        mavenCentral()\n    }\n    dependencies {\n        classpath 'com.google.gms:google-services:4.4.1'\n    }\n}\n$(cat android/build.gradle)" > android/build.gradle
-          
-          # B. App build.gradle me plugins aur dependencies add karna
           echo "apply plugin: 'com.google.gms.google-services'" >> android/app/build.gradle
           echo "dependencies {" >> android/app/build.gradle
           echo "    implementation platform('com.google.firebase:firebase-bom:33.1.0')" >> android/app/build.gradle
@@ -50,7 +65,6 @@ jobs:
           echo "    implementation 'dev.rikka.shizuku:provider:12.1.0'" >> android/app/build.gradle
           echo "}" >> android/app/build.gradle
 
-      # 🚀 3. GENERATE NATIVE KOTLIN CODE FOR REAL VPN & SHIZUKU
       - name: Create Custom Native Kotlin Files
         run: |
           find android/app/src/main/kotlin/ -name "MainActivity.kt" -type f -delete
@@ -131,7 +145,6 @@ jobs:
           }
           EOF
 
-      # 🚀 4. INJECT ANDROID MANIFEST WITH VPN PERMISSION
       - name: Auto Inject AndroidManifest (Permissions, VPN & Shizuku)
         run: |
           cat << 'EOF' > android/app/src/main/AndroidManifest.xml
@@ -149,7 +162,6 @@ jobs:
                       <intent-filter> <action android:name="android.intent.action.MAIN"/> <category android:name="android.intent.category.LAUNCHER"/> </intent-filter>
                   </activity>
                   
-                  <!-- 🛡️ REAL VPN SERVICE DEFINITION -->
                   <service android:name=".FirewallVpnService" android:permission="android.permission.BIND_VPN_SERVICE" android:exported="false">
                       <intent-filter> <action android:name="android.net.VpnService"/> </intent-filter>
                   </service>
