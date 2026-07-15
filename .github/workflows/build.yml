@@ -22,39 +22,117 @@ jobs:
         with:
           flutter-version: "3.19.0"
 
-      # 1. Boilerplate generate karega
       - name: Generate Flutter Boilerplate
         run: flutter create --project-name gaming_tool --org com.raaz.gaming .
 
-      # 2. Min SDK Fix (API 24 for Shizuku)
-      - name: Fix minSdkVersion for Shizuku
+      - name: Fix minSdkVersion for Shizuku & Firebase
         run: sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/g' android/app/build.gradle
 
-      # 3. Shizuku API inject
-      - name: Inject Shizuku API into build.gradle
+      # ✅ 1. INJECT GOOGLE SERVICES JSON
+      - name: Create Google Services JSON
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
+          echo "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+
+      # ✅ 2. INJECT FIREBASE & SHIZUKU TO GRADLE
+      - name: Inject Firebase and Shizuku to Gradle
+        run: |
+          sed -i 's/dependencies {/dependencies {\n        classpath "com.google.gms:google-services:4.3.15"/g' android/build.gradle
+          echo "apply plugin: 'com.google.gms.google-services'" >> android/app/build.gradle
           echo "dependencies {" >> android/app/build.gradle
+          echo "    implementation platform('com.google.firebase:firebase-bom:32.1.1')" >> android/app/build.gradle
+          echo "    implementation 'com.google.firebase:firebase-database'" >> android/app/build.gradle
           echo "    implementation 'dev.rikka.shizuku:api:12.1.0'" >> android/app/build.gradle
           echo "    implementation 'dev.rikka.shizuku:provider:12.1.0'" >> android/app/build.gradle
           echo "}" >> android/app/build.gradle
 
-      # 4. Delete All Duplicates Before Copying!
-      - name: Copy Custom MainActivity & Remove Duplicates
+      # 🚀 3. GENERATE NATIVE KOTLIN CODE FOR REAL VPN & SHIZUKU
+      - name: Create Custom Native Kotlin Files
         run: |
-          # Pehle se maujood kisi bhi MainActivity ko delete karo
           find android/app/src/main/kotlin/ -name "MainActivity.kt" -type f -delete
-          
-          # Sahi folder banao aur custom file copy karo
           mkdir -p android/app/src/main/kotlin/com/raaz/gaming/gaming_tool/
-          cp MainActivity_custom.kt android/app/src/main/kotlin/com/raaz/gaming/gaming_tool/MainActivity.kt
+          
+          # MainActivity.kt
+          cat << 'EOF' > android/app/src/main/kotlin/com/raaz/gaming/gaming_tool/MainActivity.kt
+          package com.raaz.gaming.gaming_tool
+          import android.content.Intent
+          import android.net.VpnService
+          import androidx.annotation.NonNull
+          import io.flutter.embedding.android.FlutterActivity
+          import io.flutter.embedding.engine.FlutterEngine
+          import io.flutter.plugin.common.MethodChannel
+          import rikka.shizuku.Shizuku
 
-      # 🛠️ 5. YAHAN FIX HAI: Auto Permission Injection
-      - name: Auto Inject AndroidManifest (Permissions & Shizuku)
+          class MainActivity: FlutterActivity() {
+              override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
+                  super.configureFlutterEngine(flutterEngine)
+                  MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.raaz.gaming/native").setMethodCallHandler { call, result ->
+                      when (call.method) {
+                          "isShizukuServiceRunning" -> result.success(Shizuku.pingBinder())
+                          "checkPermission" -> result.success(Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED)
+                          "requestPermission" -> { Shizuku.requestPermission(100); result.success(true) }
+                          "executeCommand" -> {
+                              val cmd = call.argument<String>("command")
+                              if (cmd != null) {
+                                  try {
+                                      val process = Shizuku.newProcess(arrayOf("sh", "-c", cmd), null, null)
+                                      process.waitFor()
+                                      result.success(process.exitValue() == 0)
+                                  } catch (e: Exception) { result.success(false) }
+                              } else result.success(false)
+                          }
+                          "startVpn" -> {
+                              val intent = VpnService.prepare(this)
+                              if (intent != null) startActivityForResult(intent, 0)
+                              else startService(Intent(this, FirewallVpnService::class.java))
+                              result.success(true)
+                          }
+                          "stopVpn" -> {
+                              stopService(Intent(this, FirewallVpnService::class.java))
+                              result.success(true)
+                          }
+                          else -> result.notImplemented()
+                      }
+                  }
+              }
+          }
+          EOF
+          
+          # FirewallVpnService.kt
+          cat << 'EOF' > android/app/src/main/kotlin/com/raaz/gaming/gaming_tool/FirewallVpnService.kt
+          package com.raaz.gaming.gaming_tool
+          import android.net.VpnService
+          import android.content.Intent
+          import android.os.ParcelFileDescriptor
+
+          class FirewallVpnService : VpnService() {
+              private var vpnInterface: ParcelFileDescriptor? = null
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  if (vpnInterface == null) {
+                      try {
+                          vpnInterface = Builder()
+                              .addAddress("10.0.0.2", 24)
+                              .addRoute("0.0.0.0", 0)
+                              .setSession("SK VIP Firewall")
+                              .establish()
+                      } catch (e: Exception) { e.printStackTrace() }
+                  }
+                  return START_STICKY
+              }
+              override fun onDestroy() {
+                  vpnInterface?.close()
+                  vpnInterface = null
+                  super.onDestroy()
+              }
+          }
+          EOF
+
+      # 🚀 4. INJECT ANDROID MANIFEST WITH VPN PERMISSION
+      - name: Auto Inject AndroidManifest (Permissions, VPN & Shizuku)
         run: |
           cat << 'EOF' > android/app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.raaz.gaming.gaming_tool">
-              
-              <!-- ALL REQUIRED PERMISSIONS INJECTED AUTOMATICALLY -->
               <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
               <uses-permission android:name="android.permission.INTERNET" />
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -62,36 +140,23 @@ jobs:
               <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
               <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
               
-              <application
-                  android:label="gaming_tool"
-                  android:name="${applicationName}"
-                  android:icon="@mipmap/ic_launcher"
-                  android:requestLegacyExternalStorage="true">
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true"
-                      android:launchMode="singleTop"
-                      android:theme="@style/LaunchTheme"
-                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-                      android:hardwareAccelerated="true"
-                      android:windowSoftInputMode="adjustResize">
-                      <meta-data
-                        android:name="io.flutter.embedding.android.NormalTheme"
-                        android:resource="@style/NormalTheme" />
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN"/>
-                          <category android:name="android.intent.category.LAUNCHER"/>
-                      </intent-filter>
+              <application android:label="gaming_tool" android:name="${applicationName}" android:icon="@mipmap/ic_launcher" android:requestLegacyExternalStorage="true">
+                  <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop" android:theme="@style/LaunchTheme" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode" android:hardwareAccelerated="true" android:windowSoftInputMode="adjustResize">
+                      <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+                      <intent-filter> <action android:name="android.intent.action.MAIN"/> <category android:name="android.intent.category.LAUNCHER"/> </intent-filter>
                   </activity>
-                  <meta-data android:name="flutterEmbedding" android:value="2" />
                   
-                  <!-- SHIZUKU V3 SUPPORT INJECTED -->
+                  <!-- 🛡️ REAL VPN SERVICE DEFINITION -->
+                  <service android:name=".FirewallVpnService" android:permission="android.permission.BIND_VPN_SERVICE" android:exported="false">
+                      <intent-filter> <action android:name="android.net.VpnService"/> </intent-filter>
+                  </service>
+
+                  <meta-data android:name="flutterEmbedding" android:value="2" />
                   <meta-data android:name="moe.shizuku.client.V3_SUPPORT" android:value="true" />
               </application>
           </manifest>
           EOF
 
-      # 6. Final Build!
       - name: Install Dependencies & Build
         run: |
           flutter pub get
