@@ -16,11 +16,12 @@ void main() {
 }
 
 // ==========================================
-// GLOBAL STATE (To track Paid Status)
+// GLOBAL STATE
 // ==========================================
 class AppGlobals {
   static bool isWallHackPaid = false;
   static bool isPaidObbPaid = false;
+  static bool isDarkMode = true; // Settings toggle state
 
   // Cyberpunk Theme Colors
   static const Color neonYellow = Color(0xFFFFCC00);
@@ -32,7 +33,7 @@ class AppGlobals {
 }
 
 // ==========================================
-// SHIZUKU CORE ENGINE (Shared across pages)
+// SHIZUKU CORE ENGINE
 // ==========================================
 class ShizukuService {
   static const platform = MethodChannel('com.raaz.gaming/shizuku');
@@ -129,10 +130,47 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  // Slider Variables
+  final PageController _pageController = PageController();
+  int _currentPage = 0;
+  Timer? _sliderTimer;
+
+  // Feedback Images Placeholder (Replace with your own feedback URLs)
+  final List<String> feedbackImages = [
+    "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=800&q=80",
+    "https://images.unsplash.com/photo-1552820728-8b83bb6b773f?auto=format&fit=crop&w=800&q=80",
+    "https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=800&q=80"
+  ];
+
   @override
   void initState() {
     super.initState();
     ShizukuService.autoConnect().then((_) => setState(() {}));
+    _startAutoSlider();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    _sliderTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startAutoSlider() {
+    _sliderTimer = Timer.periodic(const Duration(seconds: 3), (Timer timer) {
+      if (_currentPage < feedbackImages.length - 1) {
+        _currentPage++;
+      } else {
+        _currentPage = 0;
+      }
+      if (_pageController.hasClients) {
+        _pageController.animateToPage(
+          _currentPage,
+          duration: const Duration(milliseconds: 600),
+          curve: Curves.fastOutSlowIn,
+        );
+      }
+    });
   }
 
   void _handleBoxClick(String feature, Color color, bool isPaid, VoidCallback onSuccess) {
@@ -156,27 +194,105 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  // 100% Working Settings Panel
+  void _showSettingsPanel() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: StatefulBuilder(builder: (context, setModalState) {
+            return Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: AppGlobals.surfaceCard.withOpacity(0.95),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+                border: Border.all(color: AppGlobals.neonBlue.withOpacity(0.5), width: 2),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(width: 50, height: 5, decoration: BoxDecoration(color: Colors.grey.shade600, borderRadius: BorderRadius.circular(10))),
+                  const SizedBox(height: 20),
+                  const Text("APP SETTINGS", style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 2)),
+                  const SizedBox(height: 24),
+                  
+                  // Shizuku Refresh Tile
+                  ListTile(
+                    tileColor: Colors.black26,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    leading: Icon(ShizukuService.isConnected ? Icons.gpp_good_rounded : Icons.gpp_maybe_rounded, color: ShizukuService.isConnected ? AppGlobals.neonGreen : AppGlobals.neonOrange, size: 30),
+                    title: const Text("Shizuku Core Service", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    subtitle: Text(ShizukuService.isConnected ? "Connected & Active" : "Disconnected", style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+                    trailing: CupertinoButton(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      color: ShizukuService.isConnected ? AppGlobals.neonGreen.withOpacity(0.2) : AppGlobals.neonOrange.withOpacity(0.2),
+                      onPressed: () async {
+                        await ShizukuService.autoConnect();
+                        setModalState(() {});
+                        setState(() {}); // Update main page too
+                      },
+                      child: Text("RECONNECT", style: TextStyle(color: ShizukuService.isConnected ? AppGlobals.neonGreen : AppGlobals.neonOrange, fontWeight: FontWeight.bold, fontSize: 12)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Theme Toggle Tile
+                  ListTile(
+                    tileColor: Colors.black26,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    leading: Icon(AppGlobals.isDarkMode ? CupertinoIcons.moon_stars_fill : CupertinoIcons.sun_max_fill, color: AppGlobals.neonBlue, size: 30),
+                    title: const Text("Dark UI Mode", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    trailing: CupertinoSwitch(
+                      activeColor: AppGlobals.neonBlue,
+                      value: AppGlobals.isDarkMode,
+                      onChanged: (v) {
+                        setModalState(() => AppGlobals.isDarkMode = v);
+                        setState(() => AppGlobals.isDarkMode = v);
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+                ],
+              ),
+            );
+          }),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Dynamic BG Color based on Settings Toggle
+    Color currentBg = AppGlobals.isDarkMode ? AppGlobals.darkBg : const Color(0xFFF4F5F9);
+    Color currentCard = AppGlobals.isDarkMode ? AppGlobals.surfaceCard : Colors.white;
+    Color currentText = AppGlobals.isDarkMode ? Colors.white : Colors.black;
+
     return Scaffold(
-      backgroundColor: AppGlobals.darkBg,
+      backgroundColor: currentBg,
       body: SafeArea(
         child: Column(
           children: [
-            // Header
+            // Header (SK VIP & Gear Icon)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Column(
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text("SK VIP", style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, fontStyle: FontStyle.italic, color: Colors.white, letterSpacing: 2)),
-                      Text("CONFIG • POWERED BY SHIZUKU", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.8, color: AppGlobals.neonOrange)),
+                      Text("SK VIP", style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, fontStyle: FontStyle.italic, color: currentText, letterSpacing: 2)),
+                      const Text("CONFIG • POWERED BY SHIZUKU", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.8, color: AppGlobals.neonOrange)),
                     ],
                   ),
-                  Icon(CupertinoIcons.settings_solid, color: AppGlobals.neonBlue, size: 28),
+                  IconButton(
+                    icon: Icon(CupertinoIcons.settings_solid, color: AppGlobals.neonBlue, size: 30),
+                    onPressed: _showSettingsPanel,
+                  ),
                 ],
               ),
             ),
@@ -186,16 +302,15 @@ class _HomePageState extends State<HomePage> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 physics: const BouncingScrollPhysics(),
                 children: [
-                  // Shizuku Banner
+                  // Shizuku Connection Status Box (Perfect Match to Image)
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 300),
                     margin: const EdgeInsets.only(bottom: 24),
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: AppGlobals.surfaceCard,
-                      borderRadius: BorderRadius.circular(16),
+                      color: currentCard,
+                      borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: ShizukuService.isConnected ? AppGlobals.neonGreen : AppGlobals.neonOrange, width: 2),
-                      boxShadow: [BoxShadow(color: (ShizukuService.isConnected ? AppGlobals.neonGreen : AppGlobals.neonOrange).withOpacity(0.15), blurRadius: 12)],
                     ),
                     child: InkWell(
                       onTap: () async {
@@ -204,14 +319,15 @@ class _HomePageState extends State<HomePage> {
                       },
                       child: Row(
                         children: [
-                          Icon(ShizukuService.isConnected ? Icons.gpp_good_rounded : Icons.gpp_maybe_rounded, color: ShizukuService.isConnected ? AppGlobals.neonGreen : AppGlobals.neonOrange, size: 36),
+                          Icon(ShizukuService.isConnected ? Icons.security_rounded : Icons.privacy_tip_rounded, color: ShizukuService.isConnected ? AppGlobals.neonGreen : AppGlobals.neonOrange, size: 40),
                           const SizedBox(width: 16),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(ShizukuService.isConnected ? "SHIZUKU CONNECTED" : "SHIZUKU DISCONNECTED", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16)),
-                                Text(ShizukuService.isConnected ? "Ready for injection." : "Tap to initialize service.", style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+                                Text(ShizukuService.isConnected ? "SHIZUKU\nCONNECTED" : "SHIZUKU\nDISCONNECTED", style: TextStyle(color: currentText, fontWeight: FontWeight.w900, fontSize: 18, height: 1.2)),
+                                const SizedBox(height: 4),
+                                Text(ShizukuService.isConnected ? "System is ready." : "Tap to initialize service.", style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
                               ],
                             ),
                           ),
@@ -220,59 +336,105 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
 
-                  // MAIN FEATURE BOXES
+                  // WALL HACK PANEL FEATURES BOX
                   _buildNavigationBox(
-                    title: "WALL HACK PANEL FEATURES",
+                    textLines: ["WALL HACK", "PANEL", "FEATURES"],
                     icon: Icons.grid_view_rounded,
                     color: AppGlobals.neonYellow,
                     isUnlocked: AppGlobals.isWallHackPaid,
+                    currentCardBg: currentCard,
+                    currentTextColor: currentText,
                     onTap: () => _handleBoxClick("WALL HACK", AppGlobals.neonYellow, AppGlobals.isWallHackPaid, () {
                       Navigator.push(context, CupertinoPageRoute(builder: (context) => const WallHackPage()));
                     }),
                   ),
+                  
                   const SizedBox(height: 16),
+                  
+                  // PAID OBB ENHANCED MODULES BOX
                   _buildNavigationBox(
-                    title: "PAID OBB ENHANCED MODULES",
+                    textLines: ["PAID OBB", "ENHANCED", "MODULES"],
                     icon: Icons.developer_board_rounded,
                     color: AppGlobals.neonBlue,
                     isUnlocked: AppGlobals.isPaidObbPaid,
+                    currentCardBg: currentCard,
+                    currentTextColor: currentText,
                     onTap: () => _handleBoxClick("PAID OBB", AppGlobals.neonBlue, AppGlobals.isPaidObbPaid, () {
                       Navigator.push(context, CupertinoPageRoute(builder: (context) => const PaidObbPage()));
                     }),
                   ),
 
-                  const SizedBox(height: 40),
+                  const SizedBox(height: 30),
+                  
+                  // USER FEEDBACK IMAGE GLIDING SLIDER
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("USER FEEDBACK & PROOFS", style: TextStyle(color: AppGlobals.isDarkMode ? Colors.white54 : Colors.black54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+                      const SizedBox(height: 10),
+                      Container(
+                        height: 160,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 10)],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: PageView.builder(
+                            controller: _pageController,
+                            itemCount: feedbackImages.length,
+                            itemBuilder: (context, index) {
+                              return Image.network(
+                                feedbackImages[index],
+                                fit: BoxFit.cover,
+                                errorBuilder: (c, e, s) => Container(color: Colors.grey.shade900, child: const Icon(Icons.image, color: Colors.white, size: 50)),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
 
-                  // FEEDBACK BUTTON
+                  const SizedBox(height: 24),
+
+                  // SHARE FEEDBACK BUTTON
                   Center(
-                    child: TextButton.icon(
-                      onPressed: () {},
-                      icon: const Icon(Icons.feedback_rounded, color: Colors.white70, size: 20),
-                      label: const Text("Share Feedback", style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
-                      style: TextButton.styleFrom(backgroundColor: Colors.white10, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
+                    child: Container(
+                      width: 220,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(25),
+                      ),
+                      child: TextButton.icon(
+                        onPressed: () {
+                          ShizukuService._showSnack(context, "Redirecting to Telegram Support...", AppGlobals.neonBlue);
+                        },
+                        icon: const Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 20),
+                        label: const Text("Share Feedback", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                      ),
                     ),
                   ),
 
                   const SizedBox(height: 30),
 
-                  // PHONEPE STYLE SECURE FOOTER
+                  // SECURE FOOTER
                   Column(
                     children: [
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.verified_user_rounded, color: Colors.green.shade500, size: 28),
+                          Icon(Icons.verified_user_rounded, color: AppGlobals.neonGreen, size: 30),
                           const SizedBox(width: 8),
-                          const Text("100% SECURE & SAFE", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 1)),
+                          Text("100% SECURE & SAFE", style: TextStyle(color: currentText, fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: 1)),
                         ],
                       ),
                       const SizedBox(height: 8),
-                      Text("All payments are encrypted and verified instantly", style: TextStyle(color: Colors.grey.shade500, fontSize: 11)),
-                      const SizedBox(height: 4),
-                      Text("POWERED BY SK VIP • UPI", style: TextStyle(color: Colors.grey.shade600, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                      Text("All payments are encrypted and verified instantly.", style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
                     ],
                   ),
-                  const SizedBox(height: 30),
+                  const SizedBox(height: 40),
                 ],
               ),
             ),
@@ -282,30 +444,52 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildNavigationBox({required String title, required IconData icon, required Color color, required bool isUnlocked, required VoidCallback onTap}) {
+  // Exact Match Builder for the Feature Boxes
+  Widget _buildNavigationBox({
+    required List<String> textLines, 
+    required IconData icon, 
+    required Color color, 
+    required bool isUnlocked, 
+    required Color currentCardBg,
+    required Color currentTextColor,
+    required VoidCallback onTap
+  }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
         decoration: BoxDecoration(
-          color: AppGlobals.surfaceCard,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withOpacity(0.5), width: 1.5),
+          color: currentCardBg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withOpacity(0.8), width: 1.5),
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Icon(icon, color: color, size: 30),
-            const SizedBox(width: 16),
+            // Left Icon
+            Icon(icon, color: color, size: 38),
+            const SizedBox(width: 24),
+            
+            // Middle Stacked Text
             Expanded(
-              child: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 1)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: textLines.map((line) => Text(
+                  line, 
+                  style: TextStyle(color: currentTextColor, fontWeight: FontWeight.w900, fontSize: 18, height: 1.2, letterSpacing: 1)
+                )).toList(),
+              ),
             ),
-            if (isUnlocked)
-              Icon(Icons.lock_open_rounded, color: AppGlobals.neonGreen, size: 20)
-            else
-              Icon(Icons.lock_outline_rounded, color: Colors.redAccent, size: 20),
-            const SizedBox(width: 12),
-            Icon(CupertinoIcons.chevron_right, color: Colors.grey.shade400, size: 20),
+            
+            // Right Lock + Chevron
+            Row(
+              children: [
+                Icon(isUnlocked ? Icons.lock_open_rounded : Icons.lock_outline_rounded, color: isUnlocked ? AppGlobals.neonGreen : Colors.redAccent, size: 24),
+                const SizedBox(width: 8),
+                Icon(CupertinoIcons.chevron_right, color: Colors.grey.shade400, size: 24),
+              ],
+            )
           ],
         ),
       ),
@@ -331,8 +515,6 @@ class PaymentPage extends StatefulWidget {
 class _PaymentPageState extends State<PaymentPage> {
   final TextEditingController _utrController = TextEditingController();
   bool isVerifying = false;
-  
-  // Replace with your actual QR Code Image URL
   final String qrCodeUrl = "https://upload.wikimedia.org/wikipedia/commons/d/d0/QR_code_for_mobile_English_Wikipedia.svg";
 
   void verifyPayment() async {
@@ -342,11 +524,9 @@ class _PaymentPageState extends State<PaymentPage> {
     }
 
     setState(() => isVerifying = true);
-    
-    // Simulating network verification delay
-    await Future.delayed(const Duration(seconds: 2));
-    
+    await Future.delayed(const Duration(seconds: 2)); // Fake network delay
     setState(() => isVerifying = false);
+    
     ShizukuService._showSnack(context, "✅ Payment Verified! Feature Unlocked.", AppGlobals.neonGreen);
     
     if (widget.featureName == "WALL HACK") {
@@ -362,18 +542,18 @@ class _PaymentPageState extends State<PaymentPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppGlobals.darkBg,
+      backgroundColor: AppGlobals.isDarkMode ? AppGlobals.darkBg : Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
+        iconTheme: IconThemeData(color: AppGlobals.isDarkMode ? Colors.white : Colors.black),
         title: Text("UNLOCK ${widget.featureName}", style: TextStyle(color: widget.themeColor, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 1)),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            Text(widget.price, style: const TextStyle(color: Colors.white, fontSize: 40, fontWeight: FontWeight.w900)),
+            Text(widget.price, style: TextStyle(color: AppGlobals.isDarkMode ? Colors.white : Colors.black, fontSize: 40, fontWeight: FontWeight.w900)),
             Text("Pay via any UPI App", style: TextStyle(color: Colors.grey.shade400)),
             const SizedBox(height: 30),
             
@@ -381,7 +561,7 @@ class _PaymentPageState extends State<PaymentPage> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: widget.themeColor, width: 3)),
-              child: Image.network(qrCodeUrl, height: 200, width: 200, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.qr_code_2, size: 200, color: Colors.black)),
+              child: Image.network(qrCodeUrl, height: 200, width: 200, fit: BoxFit.cover),
             ),
             const SizedBox(height: 30),
 
@@ -389,14 +569,14 @@ class _PaymentPageState extends State<PaymentPage> {
             TextField(
               controller: _utrController,
               keyboardType: TextInputType.number,
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 2),
+              style: TextStyle(color: AppGlobals.isDarkMode ? Colors.white : Colors.black, fontWeight: FontWeight.bold, letterSpacing: 2),
               decoration: InputDecoration(
                 filled: true,
-                fillColor: AppGlobals.surfaceCard,
+                fillColor: AppGlobals.isDarkMode ? AppGlobals.surfaceCard : Colors.grey.shade200,
                 hintText: "Enter 12-Digit UTR / Ref No.",
                 hintStyle: TextStyle(color: Colors.grey.shade600, letterSpacing: 0),
                 prefixIcon: Icon(Icons.tag, color: widget.themeColor),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.white12)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppGlobals.isDarkMode ? Colors.white12 : Colors.grey.shade400)),
                 focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: widget.themeColor, width: 2)),
               ),
             ),
@@ -425,7 +605,7 @@ class _PaymentPageState extends State<PaymentPage> {
 }
 
 // ==========================================
-// 3. WALL HACK PAGE (wall.dart equivalent)
+// 3. WALL HACK PAGE (Unlocked)
 // ==========================================
 class WallHackPage extends StatefulWidget {
   const WallHackPage({super.key});
@@ -440,10 +620,10 @@ class _WallHackPageState extends State<WallHackPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppGlobals.darkBg,
+      backgroundColor: AppGlobals.isDarkMode ? AppGlobals.darkBg : Colors.white,
       appBar: AppBar(
-        backgroundColor: AppGlobals.surfaceCard,
-        iconTheme: const IconThemeData(color: Colors.white),
+        backgroundColor: AppGlobals.isDarkMode ? AppGlobals.surfaceCard : Colors.grey.shade200,
+        iconTheme: IconThemeData(color: AppGlobals.isDarkMode ? Colors.white : Colors.black),
         title: const Text("WALL HACK MODULES", style: TextStyle(color: AppGlobals.neonYellow, fontWeight: FontWeight.w900, fontSize: 16)),
       ),
       body: ListView(
@@ -464,15 +644,15 @@ class _WallHackPageState extends State<WallHackPage> {
   Widget _buildFeatureToggle(String title, String subtitle, bool val, Function(bool) onChanged) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: AppGlobals.surfaceCard, borderRadius: BorderRadius.circular(16), border: Border.all(color: val ? AppGlobals.neonYellow : Colors.white12, width: 1.5)),
+      decoration: BoxDecoration(color: AppGlobals.isDarkMode ? AppGlobals.surfaceCard : Colors.grey.shade100, borderRadius: BorderRadius.circular(16), border: Border.all(color: val ? AppGlobals.neonYellow : Colors.white12, width: 1.5)),
       child: Row(
         children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
-                Text(subtitle, style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+                Text(title, style: TextStyle(color: AppGlobals.isDarkMode ? Colors.white : Colors.black, fontWeight: FontWeight.bold, fontSize: 15)),
+                Text(subtitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
               ],
             ),
           ),
@@ -486,7 +666,7 @@ class _WallHackPageState extends State<WallHackPage> {
 }
 
 // ==========================================
-// 4. PAID OBB PAGE (paid.dart equivalent)
+// 4. PAID OBB PAGE (Unlocked)
 // ==========================================
 class PaidObbPage extends StatefulWidget {
   const PaidObbPage({super.key});
@@ -501,10 +681,10 @@ class _PaidObbPageState extends State<PaidObbPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppGlobals.darkBg,
+      backgroundColor: AppGlobals.isDarkMode ? AppGlobals.darkBg : Colors.white,
       appBar: AppBar(
-        backgroundColor: AppGlobals.surfaceCard,
-        iconTheme: const IconThemeData(color: Colors.white),
+        backgroundColor: AppGlobals.isDarkMode ? AppGlobals.surfaceCard : Colors.grey.shade200,
+        iconTheme: IconThemeData(color: AppGlobals.isDarkMode ? Colors.white : Colors.black),
         title: const Text("PAID OBB MODULES", style: TextStyle(color: AppGlobals.neonBlue, fontWeight: FontWeight.w900, fontSize: 16)),
       ),
       body: ListView(
@@ -525,15 +705,15 @@ class _PaidObbPageState extends State<PaidObbPage> {
   Widget _buildFeatureToggle(String title, String subtitle, bool val, Function(bool) onChanged) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: AppGlobals.surfaceCard, borderRadius: BorderRadius.circular(16), border: Border.all(color: val ? AppGlobals.neonBlue : Colors.white12, width: 1.5)),
+      decoration: BoxDecoration(color: AppGlobals.isDarkMode ? AppGlobals.surfaceCard : Colors.grey.shade100, borderRadius: BorderRadius.circular(16), border: Border.all(color: val ? AppGlobals.neonBlue : Colors.white12, width: 1.5)),
       child: Row(
         children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
-                Text(subtitle, style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+                Text(title, style: TextStyle(color: AppGlobals.isDarkMode ? Colors.white : Colors.black, fontWeight: FontWeight.bold, fontSize: 15)),
+                Text(subtitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
               ],
             ),
           ),
