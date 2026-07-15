@@ -28,30 +28,19 @@ jobs:
       - name: Fix minSdkVersion for Shizuku & Firebase
         run: sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/g' android/app/build.gradle
 
-      # 🛠️ YAHAN FIX KIYA HAI: SMART JSON INJECTOR
-      - name: Create Google Services JSON
+      # ✅ SMART JSON HANDLER (No EOF Errors & Detects your local file)
+      - name: Configure Google Services JSON
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
-          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
-            echo "⚠️ Secret is empty! Creating a fallback google-services.json to prevent build failure..."
-            cat << 'EOF' > android/app/google-services.json
-            {
-              "project_info": { "project_number": "123456789012", "project_id": "dummy-project" },
-              "client": [ {
-                "client_info": {
-                  "mobilesdk_app_id": "1:123456789012:android:abcdef0123456789",
-                  "android_client_info": { "package_name": "com.raaz.gaming.gaming_tool" }
-                },
-                "oauth_client": [], "api_key": [ { "current_key": "dummy-api-key" } ],
-                "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
-              } ],
-              "configuration_version": "1"
-            }
-            EOF
-          else
-            echo "✅ Injecting Real Google Services JSON from Secrets"
+          if [ -f "android/app/google-services.json" ]; then
+            echo "✅ Awesome! google-services.json already exists in your repo. Skipping generation."
+          elif [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            echo "✅ Injecting Real Google Services JSON from GitHub Secrets"
             echo "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+          else
+            echo "⚠️ Secret empty & file missing! Creating a fallback JSON to prevent crash..."
+            echo '{"project_info":{"project_number":"123","project_id":"dummy"},"client":[{"client_info":{"mobilesdk_app_id":"1:123:android:abc","android_client_info":{"package_name":"com.raaz.gaming.gaming_tool"}},"oauth_client":[],"api_key":[{"current_key":"dummy"}],"services":{"appinvite_service":{"other_platform_oauth_client":[]}}}],"configuration_version":"1"}' > android/app/google-services.json
           fi
 
       - name: Inject Firebase and Shizuku to Gradle
@@ -65,14 +54,13 @@ jobs:
           echo "    implementation 'dev.rikka.shizuku:provider:12.1.0'" >> android/app/build.gradle
           echo "}" >> android/app/build.gradle
 
+      # 🚀 GENERATE NATIVE KOTLIN CODE (Fixed EOF syntax)
       - name: Create Custom Native Kotlin Files
         run: |
           find android/app/src/main/kotlin/ -name "MainActivity.kt" -type f -delete
           mkdir -p android/app/src/main/kotlin/com/raaz/gaming/gaming_tool/
           
-          # MainActivity.kt
-          cat << 'EOF' > android/app/src/main/kotlin/com/raaz/gaming/gaming_tool/MainActivity.kt
-          package com.raaz.gaming.gaming_tool
+          echo 'package com.raaz.gaming.gaming_tool
           import android.content.Intent
           import android.net.VpnService
           import androidx.annotation.NonNull
@@ -113,12 +101,9 @@ jobs:
                       }
                   }
               }
-          }
-          EOF
+          }' > android/app/src/main/kotlin/com/raaz/gaming/gaming_tool/MainActivity.kt
           
-          # FirewallVpnService.kt
-          cat << 'EOF' > android/app/src/main/kotlin/com/raaz/gaming/gaming_tool/FirewallVpnService.kt
-          package com.raaz.gaming.gaming_tool
+          echo 'package com.raaz.gaming.gaming_tool
           import android.net.VpnService
           import android.content.Intent
           import android.os.ParcelFileDescriptor
@@ -142,13 +127,12 @@ jobs:
                   vpnInterface = null
                   super.onDestroy()
               }
-          }
-          EOF
+          }' > android/app/src/main/kotlin/com/raaz/gaming/gaming_tool/FirewallVpnService.kt
 
+      # 🚀 INJECT ANDROID MANIFEST WITH VPN PERMISSION (Fixed EOF syntax)
       - name: Auto Inject AndroidManifest (Permissions, VPN & Shizuku)
         run: |
-          cat << 'EOF' > android/app/src/main/AndroidManifest.xml
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.raaz.gaming.gaming_tool">
+          echo '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.raaz.gaming.gaming_tool">
               <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
               <uses-permission android:name="android.permission.INTERNET" />
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -162,6 +146,7 @@ jobs:
                       <intent-filter> <action android:name="android.intent.action.MAIN"/> <category android:name="android.intent.category.LAUNCHER"/> </intent-filter>
                   </activity>
                   
+                  <!-- 🛡️ REAL VPN SERVICE DEFINITION -->
                   <service android:name=".FirewallVpnService" android:permission="android.permission.BIND_VPN_SERVICE" android:exported="false">
                       <intent-filter> <action android:name="android.net.VpnService"/> </intent-filter>
                   </service>
@@ -169,8 +154,7 @@ jobs:
                   <meta-data android:name="flutterEmbedding" android:value="2" />
                   <meta-data android:name="moe.shizuku.client.V3_SUPPORT" android:value="true" />
               </application>
-          </manifest>
-          EOF
+          </manifest>' > android/app/src/main/AndroidManifest.xml
 
       - name: Install Dependencies & Build
         run: |
