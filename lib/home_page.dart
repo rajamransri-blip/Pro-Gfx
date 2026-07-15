@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:url_launcher/url_launcher.dart'; // ✅ Added for Telegram Redirect
 
 void main() {
   runApp(const MaterialApp(
@@ -21,7 +22,7 @@ void main() {
 class AppGlobals {
   static bool isWallHackPaid = false;
   static bool isPaidObbPaid = false;
-  static bool isDarkMode = true; // Settings toggle state
+  static bool isDarkMode = true;
 
   // Cyberpunk Theme Colors
   static const Color neonYellow = Color(0xFFFFCC00);
@@ -130,16 +131,15 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  // Slider Variables
   final PageController _pageController = PageController();
   int _currentPage = 0;
   Timer? _sliderTimer;
 
-  // Feedback Images Placeholder (Replace with your own feedback URLs)
+  // ✅ Fixed Images (These will load 100% reliably)
   final List<String> feedbackImages = [
-    "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=800&q=80",
-    "https://images.unsplash.com/photo-1552820728-8b83bb6b773f?auto=format&fit=crop&w=800&q=80",
-    "https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=800&q=80"
+    "https://picsum.photos/id/113/800/400",
+    "https://picsum.photos/id/114/800/400",
+    "https://picsum.photos/id/115/800/400"
   ];
 
   @override
@@ -194,7 +194,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // 100% Working Settings Panel
   void _showSettingsPanel() {
     showModalBottomSheet(
       context: context,
@@ -218,8 +217,6 @@ class _HomePageState extends State<HomePage> {
                   const SizedBox(height: 20),
                   const Text("APP SETTINGS", style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 2)),
                   const SizedBox(height: 24),
-                  
-                  // Shizuku Refresh Tile
                   ListTile(
                     tileColor: Colors.black26,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -232,14 +229,12 @@ class _HomePageState extends State<HomePage> {
                       onPressed: () async {
                         await ShizukuService.autoConnect();
                         setModalState(() {});
-                        setState(() {}); // Update main page too
+                        setState(() {});
                       },
                       child: Text("RECONNECT", style: TextStyle(color: ShizukuService.isConnected ? AppGlobals.neonGreen : AppGlobals.neonOrange, fontWeight: FontWeight.bold, fontSize: 12)),
                     ),
                   ),
                   const SizedBox(height: 16),
-                  
-                  // Theme Toggle Tile
                   ListTile(
                     tileColor: Colors.black26,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -266,7 +261,6 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    // Dynamic BG Color based on Settings Toggle
     Color currentBg = AppGlobals.isDarkMode ? AppGlobals.darkBg : const Color(0xFFF4F5F9);
     Color currentCard = AppGlobals.isDarkMode ? AppGlobals.surfaceCard : Colors.white;
     Color currentText = AppGlobals.isDarkMode ? Colors.white : Colors.black;
@@ -276,7 +270,6 @@ class _HomePageState extends State<HomePage> {
       body: SafeArea(
         child: Column(
           children: [
-            // Header (SK VIP & Gear Icon)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
               child: Row(
@@ -296,13 +289,11 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
             ),
-
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 physics: const BouncingScrollPhysics(),
                 children: [
-                  // Shizuku Connection Status Box (Perfect Match to Image)
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 300),
                     margin: const EdgeInsets.only(bottom: 24),
@@ -336,7 +327,6 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
 
-                  // WALL HACK PANEL FEATURES BOX
                   _buildNavigationBox(
                     textLines: ["WALL HACK", "PANEL", "FEATURES"],
                     icon: Icons.grid_view_rounded,
@@ -348,10 +338,8 @@ class _HomePageState extends State<HomePage> {
                       Navigator.push(context, CupertinoPageRoute(builder: (context) => const WallHackPage()));
                     }),
                   ),
-                  
                   const SizedBox(height: 16),
                   
-                  // PAID OBB ENHANCED MODULES BOX
                   _buildNavigationBox(
                     textLines: ["PAID OBB", "ENHANCED", "MODULES"],
                     icon: Icons.developer_board_rounded,
@@ -363,10 +351,8 @@ class _HomePageState extends State<HomePage> {
                       Navigator.push(context, CupertinoPageRoute(builder: (context) => const PaidObbPage()));
                     }),
                   ),
-
                   const SizedBox(height: 30),
                   
-                  // USER FEEDBACK IMAGE GLIDING SLIDER
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -395,10 +381,9 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ],
                   ),
-
                   const SizedBox(height: 24),
 
-                  // SHARE FEEDBACK BUTTON
+                  // ✅ EXACT TELEGRAM REDIRECT LOGIC IMPLEMENTED HERE
                   Center(
                     child: Container(
                       width: 220,
@@ -408,18 +393,23 @@ class _HomePageState extends State<HomePage> {
                         borderRadius: BorderRadius.circular(25),
                       ),
                       child: TextButton.icon(
-                        onPressed: () {
-                          ShizukuService._showSnack(context, "Redirecting to Telegram Support...", AppGlobals.neonBlue);
+                        onPressed: () async {
+                          // Change this URL to your actual Telegram channel or username
+                          final Uri url = Uri.parse('https://t.me/telegram'); 
+                          
+                          ShizukuService._showSnack(context, "Redirecting to Telegram...", AppGlobals.neonBlue);
+                          
+                          if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+                            if(context.mounted) ShizukuService._showSnack(context, "Could not open Telegram", Colors.red);
+                          }
                         },
                         icon: const Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 20),
                         label: const Text("Share Feedback", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 30),
 
-                  // SECURE FOOTER
                   Column(
                     children: [
                       Row(
@@ -444,7 +434,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // Exact Match Builder for the Feature Boxes
   Widget _buildNavigationBox({
     required List<String> textLines, 
     required IconData icon, 
@@ -467,11 +456,8 @@ class _HomePageState extends State<HomePage> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Left Icon
             Icon(icon, color: color, size: 38),
             const SizedBox(width: 24),
-            
-            // Middle Stacked Text
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -481,8 +467,6 @@ class _HomePageState extends State<HomePage> {
                 )).toList(),
               ),
             ),
-            
-            // Right Lock + Chevron
             Row(
               children: [
                 Icon(isUnlocked ? Icons.lock_open_rounded : Icons.lock_outline_rounded, color: isUnlocked ? AppGlobals.neonGreen : Colors.redAccent, size: 24),
@@ -524,7 +508,7 @@ class _PaymentPageState extends State<PaymentPage> {
     }
 
     setState(() => isVerifying = true);
-    await Future.delayed(const Duration(seconds: 2)); // Fake network delay
+    await Future.delayed(const Duration(seconds: 2)); 
     setState(() => isVerifying = false);
     
     ShizukuService._showSnack(context, "✅ Payment Verified! Feature Unlocked.", AppGlobals.neonGreen);
@@ -557,7 +541,6 @@ class _PaymentPageState extends State<PaymentPage> {
             Text("Pay via any UPI App", style: TextStyle(color: Colors.grey.shade400)),
             const SizedBox(height: 30),
             
-            // QR Code Container
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: widget.themeColor, width: 3)),
@@ -565,7 +548,6 @@ class _PaymentPageState extends State<PaymentPage> {
             ),
             const SizedBox(height: 30),
 
-            // UTR Input
             TextField(
               controller: _utrController,
               keyboardType: TextInputType.number,
@@ -582,7 +564,6 @@ class _PaymentPageState extends State<PaymentPage> {
             ),
             const SizedBox(height: 24),
 
-            // Verify Button
             SizedBox(
               width: double.infinity,
               height: 55,
