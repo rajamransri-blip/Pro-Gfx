@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert'; // ✅ Added for JSON Validation
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/cupertino.dart';
@@ -7,9 +8,14 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:url_launcher/url_launcher.dart'; // ✅ Added for Telegram Redirect
+import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // ✅ Added for Data Saving
 
-void main() {
+void main() async {
+  // ✅ Ensure Flutter engine is initialized before loading SharedPreferences
+  WidgetsFlutterBinding.ensureInitialized();
+  await AppGlobals.init();
+  
   runApp(const MaterialApp(
     home: HomePage(),
     debugShowCheckedModeBanner: false,
@@ -17,20 +23,35 @@ void main() {
 }
 
 // ==========================================
-// GLOBAL STATE
+// GLOBAL STATE (Auto Saves Everything)
 // ==========================================
 class AppGlobals {
+  static late SharedPreferences prefs;
+  
   static bool isWallHackPaid = false;
   static bool isPaidObbPaid = false;
   static bool isDarkMode = true;
+  static bool isFirewallActive = false;
+  static String firewallJsonConfig = "";
 
   // Cyberpunk Theme Colors
   static const Color neonYellow = Color(0xFFFFCC00);
   static const Color neonBlue = Color(0xFF00D4FF);
   static const Color neonGreen = Color(0xFF00FF66);
   static const Color neonOrange = Color(0xFFFF6600);
+  static const Color neonPurple = Color(0xFFB026FF);
   static const Color darkBg = Color(0xFF07070C);
   static const Color surfaceCard = Color(0xFF11111E);
+
+  // Load Saved Data
+  static Future<void> init() async {
+    prefs = await SharedPreferences.getInstance();
+    isWallHackPaid = prefs.getBool('isWallHackPaid') ?? false;
+    isPaidObbPaid = prefs.getBool('isPaidObbPaid') ?? false;
+    isDarkMode = prefs.getBool('isDarkMode') ?? true;
+    isFirewallActive = prefs.getBool('isFirewallActive') ?? false;
+    firewallJsonConfig = prefs.getString('firewallJsonConfig') ?? "";
+  }
 }
 
 // ==========================================
@@ -135,7 +156,6 @@ class _HomePageState extends State<HomePage> {
   int _currentPage = 0;
   Timer? _sliderTimer;
 
-  // ✅ Fixed Images (These will load 100% reliably)
   final List<String> feedbackImages = [
     "https://picsum.photos/id/113/800/400",
     "https://picsum.photos/id/114/800/400",
@@ -164,11 +184,7 @@ class _HomePageState extends State<HomePage> {
         _currentPage = 0;
       }
       if (_pageController.hasClients) {
-        _pageController.animateToPage(
-          _currentPage,
-          duration: const Duration(milliseconds: 600),
-          curve: Curves.fastOutSlowIn,
-        );
+        _pageController.animateToPage(_currentPage, duration: const Duration(milliseconds: 600), curve: Curves.fastOutSlowIn);
       }
     });
   }
@@ -194,6 +210,61 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  // ✅ VPN / FIREWALL JSON LOGIC
+  void _showJsonDialog(StateSetter setModalState) {
+    TextEditingController jsonController = TextEditingController(text: AppGlobals.firewallJsonConfig);
+    
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: AppGlobals.surfaceCard,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: AppGlobals.neonPurple, width: 2)),
+          title: const Text("⚙️ FIREWALL CONFIG", style: TextStyle(color: AppGlobals.neonPurple, fontWeight: FontWeight.bold, letterSpacing: 1)),
+          content: TextField(
+            controller: jsonController,
+            maxLines: 6,
+            style: const TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'monospace'),
+            decoration: InputDecoration(
+              hintText: 'Paste valid JSON config here...',
+              hintStyle: TextStyle(color: Colors.grey.shade600),
+              filled: true,
+              fillColor: AppGlobals.darkBg,
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.white12)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppGlobals.neonPurple)),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("CANCEL", style: TextStyle(color: Colors.redAccent))),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppGlobals.neonPurple),
+              onPressed: () {
+                try {
+                  // ✅ JSON VALIDATOR Check
+                  if(jsonController.text.trim().isEmpty) throw Exception();
+                  jsonDecode(jsonController.text); 
+                  
+                  // If Valid, Save and Enable VPN
+                  AppGlobals.isFirewallActive = true;
+                  AppGlobals.firewallJsonConfig = jsonController.text;
+                  AppGlobals.prefs.setBool('isFirewallActive', true);
+                  AppGlobals.prefs.setString('firewallJsonConfig', jsonController.text);
+                  
+                  setModalState(() {});
+                  Navigator.pop(context);
+                  ShizukuService._showSnack(context, "🛡️ VPN Firewall Enabled!", AppGlobals.neonPurple);
+                } catch (e) {
+                  ShizukuService._showSnack(context, "❌ Invalid JSON Format!", Colors.redAccent);
+                }
+              },
+              child: const Text("ENABLE VPN", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            )
+          ],
+        );
+      }
+    );
+  }
+
   void _showSettingsPanel() {
     showModalBottomSheet(
       context: context,
@@ -215,14 +286,16 @@ class _HomePageState extends State<HomePage> {
                 children: [
                   Container(width: 50, height: 5, decoration: BoxDecoration(color: Colors.grey.shade600, borderRadius: BorderRadius.circular(10))),
                   const SizedBox(height: 20),
-                  const Text("APP SETTINGS", style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 2)),
+                  const Text("SYSTEM SETTINGS", style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 2)),
                   const SizedBox(height: 24),
+                  
+                  // Shizuku Status
                   ListTile(
                     tileColor: Colors.black26,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     leading: Icon(ShizukuService.isConnected ? Icons.gpp_good_rounded : Icons.gpp_maybe_rounded, color: ShizukuService.isConnected ? AppGlobals.neonGreen : AppGlobals.neonOrange, size: 30),
-                    title: const Text("Shizuku Core Service", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                    subtitle: Text(ShizukuService.isConnected ? "Connected & Active" : "Disconnected", style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+                    title: const Text("Shizuku Core", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    subtitle: Text(ShizukuService.isConnected ? "Active" : "Disconnected", style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
                     trailing: CupertinoButton(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                       color: ShizukuService.isConnected ? AppGlobals.neonGreen.withOpacity(0.2) : AppGlobals.neonOrange.withOpacity(0.2),
@@ -231,10 +304,37 @@ class _HomePageState extends State<HomePage> {
                         setModalState(() {});
                         setState(() {});
                       },
-                      child: Text("RECONNECT", style: TextStyle(color: ShizukuService.isConnected ? AppGlobals.neonGreen : AppGlobals.neonOrange, fontWeight: FontWeight.bold, fontSize: 12)),
+                      child: Text("REFRESH", style: TextStyle(color: ShizukuService.isConnected ? AppGlobals.neonGreen : AppGlobals.neonOrange, fontWeight: FontWeight.bold, fontSize: 12)),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+
+                  // ✅ NEW FIREWALL / VPN FEATURE
+                  ListTile(
+                    tileColor: Colors.black26,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: AppGlobals.isFirewallActive ? AppGlobals.neonPurple.withOpacity(0.5) : Colors.transparent)),
+                    leading: Icon(Icons.shield_moon_rounded, color: AppGlobals.isFirewallActive ? AppGlobals.neonPurple : Colors.grey, size: 30),
+                    title: const Text("Firewall VPN", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    subtitle: Text(AppGlobals.isFirewallActive ? "Secured via JSON Config" : "Disabled", style: TextStyle(color: Colors.grey.shade400, fontSize: 12)),
+                    trailing: CupertinoSwitch(
+                      activeColor: AppGlobals.neonPurple,
+                      value: AppGlobals.isFirewallActive,
+                      onChanged: (v) {
+                        if (v) {
+                          _showJsonDialog(setModalState);
+                        } else {
+                          setModalState(() {
+                            AppGlobals.isFirewallActive = false;
+                            AppGlobals.prefs.setBool('isFirewallActive', false);
+                          });
+                          ShizukuService._showSnack(context, "Firewall Disabled", Colors.orange);
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Theme Toggle
                   ListTile(
                     tileColor: Colors.black26,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -245,7 +345,8 @@ class _HomePageState extends State<HomePage> {
                       value: AppGlobals.isDarkMode,
                       onChanged: (v) {
                         setModalState(() => AppGlobals.isDarkMode = v);
-                        setState(() => AppGlobals.isDarkMode = v);
+                        AppGlobals.prefs.setBool('isDarkMode', v);
+                        setState(() {});
                       },
                     ),
                   ),
@@ -282,10 +383,7 @@ class _HomePageState extends State<HomePage> {
                       const Text("CONFIG • POWERED BY SHIZUKU", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.8, color: AppGlobals.neonOrange)),
                     ],
                   ),
-                  IconButton(
-                    icon: Icon(CupertinoIcons.settings_solid, color: AppGlobals.neonBlue, size: 30),
-                    onPressed: _showSettingsPanel,
-                  ),
+                  IconButton(icon: Icon(CupertinoIcons.settings_solid, color: AppGlobals.neonBlue, size: 30), onPressed: _showSettingsPanel),
                 ],
               ),
             ),
@@ -328,28 +426,16 @@ class _HomePageState extends State<HomePage> {
                   ),
 
                   _buildNavigationBox(
-                    textLines: ["WALL HACK", "PANEL", "FEATURES"],
-                    icon: Icons.grid_view_rounded,
-                    color: AppGlobals.neonYellow,
-                    isUnlocked: AppGlobals.isWallHackPaid,
-                    currentCardBg: currentCard,
-                    currentTextColor: currentText,
-                    onTap: () => _handleBoxClick("WALL HACK", AppGlobals.neonYellow, AppGlobals.isWallHackPaid, () {
-                      Navigator.push(context, CupertinoPageRoute(builder: (context) => const WallHackPage()));
-                    }),
+                    textLines: ["WALL HACK", "PANEL", "FEATURES"], icon: Icons.grid_view_rounded, color: AppGlobals.neonYellow, isUnlocked: AppGlobals.isWallHackPaid,
+                    currentCardBg: currentCard, currentTextColor: currentText,
+                    onTap: () => _handleBoxClick("WALL HACK", AppGlobals.neonYellow, AppGlobals.isWallHackPaid, () => Navigator.push(context, CupertinoPageRoute(builder: (context) => const WallHackPage()))),
                   ),
                   const SizedBox(height: 16),
                   
                   _buildNavigationBox(
-                    textLines: ["PAID OBB", "ENHANCED", "MODULES"],
-                    icon: Icons.developer_board_rounded,
-                    color: AppGlobals.neonBlue,
-                    isUnlocked: AppGlobals.isPaidObbPaid,
-                    currentCardBg: currentCard,
-                    currentTextColor: currentText,
-                    onTap: () => _handleBoxClick("PAID OBB", AppGlobals.neonBlue, AppGlobals.isPaidObbPaid, () {
-                      Navigator.push(context, CupertinoPageRoute(builder: (context) => const PaidObbPage()));
-                    }),
+                    textLines: ["PAID OBB", "ENHANCED", "MODULES"], icon: Icons.developer_board_rounded, color: AppGlobals.neonBlue, isUnlocked: AppGlobals.isPaidObbPaid,
+                    currentCardBg: currentCard, currentTextColor: currentText,
+                    onTap: () => _handleBoxClick("PAID OBB", AppGlobals.neonBlue, AppGlobals.isPaidObbPaid, () => Navigator.push(context, CupertinoPageRoute(builder: (context) => const PaidObbPage()))),
                   ),
                   const SizedBox(height: 30),
                   
@@ -360,22 +446,12 @@ class _HomePageState extends State<HomePage> {
                       const SizedBox(height: 10),
                       Container(
                         height: 160,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 10)],
-                        ),
+                        decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 10)]),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(16),
                           child: PageView.builder(
-                            controller: _pageController,
-                            itemCount: feedbackImages.length,
-                            itemBuilder: (context, index) {
-                              return Image.network(
-                                feedbackImages[index],
-                                fit: BoxFit.cover,
-                                errorBuilder: (c, e, s) => Container(color: Colors.grey.shade900, child: const Icon(Icons.image, color: Colors.white, size: 50)),
-                              );
-                            },
+                            controller: _pageController, itemCount: feedbackImages.length,
+                            itemBuilder: (context, index) => Image.network(feedbackImages[index], fit: BoxFit.cover, errorBuilder: (c, e, s) => Container(color: Colors.grey.shade900, child: const Icon(Icons.image, color: Colors.white, size: 50))),
                           ),
                         ),
                       ),
@@ -383,25 +459,15 @@ class _HomePageState extends State<HomePage> {
                   ),
                   const SizedBox(height: 24),
 
-                  // ✅ EXACT TELEGRAM REDIRECT LOGIC IMPLEMENTED HERE
                   Center(
                     child: Container(
-                      width: 220,
-                      height: 50,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(25),
-                      ),
+                      width: 220, height: 50,
+                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: BorderRadius.circular(25)),
                       child: TextButton.icon(
                         onPressed: () async {
-                          // Change this URL to your actual Telegram channel or username
                           final Uri url = Uri.parse('https://t.me/telegram'); 
-                          
                           ShizukuService._showSnack(context, "Redirecting to Telegram...", AppGlobals.neonBlue);
-                          
-                          if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-                            if(context.mounted) ShizukuService._showSnack(context, "Could not open Telegram", Colors.red);
-                          }
+                          if (!await launchUrl(url, mode: LaunchMode.externalApplication)) if(context.mounted) ShizukuService._showSnack(context, "Could not open Telegram", Colors.red);
                         },
                         icon: const Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 20),
                         label: const Text("Share Feedback", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
@@ -434,46 +500,24 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildNavigationBox({
-    required List<String> textLines, 
-    required IconData icon, 
-    required Color color, 
-    required bool isUnlocked, 
-    required Color currentCardBg,
-    required Color currentTextColor,
-    required VoidCallback onTap
-  }) {
+  Widget _buildNavigationBox({required List<String> textLines, required IconData icon, required Color color, required bool isUnlocked, required Color currentCardBg, required Color currentTextColor, required VoidCallback onTap}) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-        decoration: BoxDecoration(
-          color: currentCardBg,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: color.withOpacity(0.8), width: 1.5),
-        ),
+        decoration: BoxDecoration(color: currentCardBg, borderRadius: BorderRadius.circular(20), border: Border.all(color: color.withOpacity(0.8), width: 1.5)),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Icon(icon, color: color, size: 38),
             const SizedBox(width: 24),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: textLines.map((line) => Text(
-                  line, 
-                  style: TextStyle(color: currentTextColor, fontWeight: FontWeight.w900, fontSize: 18, height: 1.2, letterSpacing: 1)
-                )).toList(),
-              ),
-            ),
-            Row(
-              children: [
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: textLines.map((line) => Text(line, style: TextStyle(color: currentTextColor, fontWeight: FontWeight.w900, fontSize: 18, height: 1.2, letterSpacing: 1))).toList())),
+            Row(children: [
                 Icon(isUnlocked ? Icons.lock_open_rounded : Icons.lock_outline_rounded, color: isUnlocked ? AppGlobals.neonGreen : Colors.redAccent, size: 24),
                 const SizedBox(width: 8),
                 Icon(CupertinoIcons.chevron_right, color: Colors.grey.shade400, size: 24),
-              ],
-            )
+            ])
           ],
         ),
       ),
@@ -482,7 +526,7 @@ class _HomePageState extends State<HomePage> {
 }
 
 // ==========================================
-// 2. PAYMENT VERIFICATION PAGE
+// 2. PAYMENT VERIFICATION PAGE (Auto Save Data)
 // ==========================================
 class PaymentPage extends StatefulWidget {
   final String featureName;
@@ -491,9 +535,7 @@ class PaymentPage extends StatefulWidget {
   final VoidCallback onUnlockSuccess;
 
   const PaymentPage({super.key, required this.featureName, required this.price, required this.themeColor, required this.onUnlockSuccess});
-
-  @override
-  State<PaymentPage> createState() => _PaymentPageState();
+  @override State<PaymentPage> createState() => _PaymentPageState();
 }
 
 class _PaymentPageState extends State<PaymentPage> {
@@ -502,21 +544,21 @@ class _PaymentPageState extends State<PaymentPage> {
   final String qrCodeUrl = "https://upload.wikimedia.org/wikipedia/commons/d/d0/QR_code_for_mobile_English_Wikipedia.svg";
 
   void verifyPayment() async {
-    if (_utrController.text.length < 12) {
-      ShizukuService._showSnack(context, "⚠️ Enter Valid 12-Digit UTR/Ref ID", Colors.red);
-      return;
-    }
+    if (_utrController.text.length < 12) { ShizukuService._showSnack(context, "⚠️ Enter Valid 12-Digit UTR/Ref ID", Colors.red); return; }
 
     setState(() => isVerifying = true);
     await Future.delayed(const Duration(seconds: 2)); 
     setState(() => isVerifying = false);
     
-    ShizukuService._showSnack(context, "✅ Payment Verified! Feature Unlocked.", AppGlobals.neonGreen);
+    ShizukuService._showSnack(context, "✅ Payment Verified! Feature Unlocked forever.", AppGlobals.neonGreen);
     
+    // ✅ SAVING TO SHAREDPREFERENCES SO IT NEVER LOCKS AGAIN
     if (widget.featureName == "WALL HACK") {
       AppGlobals.isWallHackPaid = true;
+      AppGlobals.prefs.setBool('isWallHackPaid', true);
     } else {
       AppGlobals.isPaidObbPaid = true;
+      AppGlobals.prefs.setBool('isPaidObbPaid', true);
     }
 
     widget.onUnlockSuccess();
@@ -527,12 +569,7 @@ class _PaymentPageState extends State<PaymentPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppGlobals.isDarkMode ? AppGlobals.darkBg : Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: IconThemeData(color: AppGlobals.isDarkMode ? Colors.white : Colors.black),
-        title: Text("UNLOCK ${widget.featureName}", style: TextStyle(color: widget.themeColor, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 1)),
-      ),
+      appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0, iconTheme: IconThemeData(color: AppGlobals.isDarkMode ? Colors.white : Colors.black), title: Text("UNLOCK ${widget.featureName}", style: TextStyle(color: widget.themeColor, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 1))),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -540,42 +577,19 @@ class _PaymentPageState extends State<PaymentPage> {
             Text(widget.price, style: TextStyle(color: AppGlobals.isDarkMode ? Colors.white : Colors.black, fontSize: 40, fontWeight: FontWeight.w900)),
             Text("Pay via any UPI App", style: TextStyle(color: Colors.grey.shade400)),
             const SizedBox(height: 30),
-            
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: widget.themeColor, width: 3)),
-              child: Image.network(qrCodeUrl, height: 200, width: 200, fit: BoxFit.cover),
-            ),
+            Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: widget.themeColor, width: 3)), child: Image.network(qrCodeUrl, height: 200, width: 200, fit: BoxFit.cover)),
             const SizedBox(height: 30),
-
             TextField(
-              controller: _utrController,
-              keyboardType: TextInputType.number,
-              style: TextStyle(color: AppGlobals.isDarkMode ? Colors.white : Colors.black, fontWeight: FontWeight.bold, letterSpacing: 2),
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: AppGlobals.isDarkMode ? AppGlobals.surfaceCard : Colors.grey.shade200,
-                hintText: "Enter 12-Digit UTR / Ref No.",
-                hintStyle: TextStyle(color: Colors.grey.shade600, letterSpacing: 0),
-                prefixIcon: Icon(Icons.tag, color: widget.themeColor),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppGlobals.isDarkMode ? Colors.white12 : Colors.grey.shade400)),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: widget.themeColor, width: 2)),
-              ),
+              controller: _utrController, keyboardType: TextInputType.number, style: TextStyle(color: AppGlobals.isDarkMode ? Colors.white : Colors.black, fontWeight: FontWeight.bold, letterSpacing: 2),
+              decoration: InputDecoration(filled: true, fillColor: AppGlobals.isDarkMode ? AppGlobals.surfaceCard : Colors.grey.shade200, hintText: "Enter 12-Digit UTR / Ref No.", hintStyle: TextStyle(color: Colors.grey.shade600, letterSpacing: 0), prefixIcon: Icon(Icons.tag, color: widget.themeColor), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppGlobals.isDarkMode ? Colors.white12 : Colors.grey.shade400)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: widget.themeColor, width: 2))),
             ),
             const SizedBox(height: 24),
-
             SizedBox(
-              width: double.infinity,
-              height: 55,
+              width: double.infinity, height: 55,
               child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: widget.themeColor,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
+                style: ElevatedButton.styleFrom(backgroundColor: widget.themeColor, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                 onPressed: isVerifying ? null : verifyPayment,
-                child: isVerifying
-                    ? const CircularProgressIndicator(color: Colors.black)
-                    : const Text("VERIFY PAYMENT", style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: 1)),
+                child: isVerifying ? const CircularProgressIndicator(color: Colors.black) : const Text("VERIFY PAYMENT", style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: 1)),
               ),
             ),
           ],
@@ -586,123 +600,43 @@ class _PaymentPageState extends State<PaymentPage> {
 }
 
 // ==========================================
-// 3. WALL HACK PAGE (Unlocked)
+// 3. WALL HACK PAGE 
 // ==========================================
-class WallHackPage extends StatefulWidget {
-  const WallHackPage({super.key});
-  @override
-  State<WallHackPage> createState() => _WallHackPageState();
-}
-
+class WallHackPage extends StatefulWidget { const WallHackPage({super.key}); @override State<WallHackPage> createState() => _WallHackPageState(); }
 class _WallHackPageState extends State<WallHackPage> {
-  bool isWallHackEnabled = false;
-  bool isDownloading = false;
-
-  @override
-  Widget build(BuildContext context) {
+  bool isWallHackEnabled = false; bool isDownloading = false;
+  @override Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppGlobals.isDarkMode ? AppGlobals.darkBg : Colors.white,
-      appBar: AppBar(
-        backgroundColor: AppGlobals.isDarkMode ? AppGlobals.surfaceCard : Colors.grey.shade200,
-        iconTheme: IconThemeData(color: AppGlobals.isDarkMode ? Colors.white : Colors.black),
-        title: const Text("WALL HACK MODULES", style: TextStyle(color: AppGlobals.neonYellow, fontWeight: FontWeight.w900, fontSize: 16)),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          _buildFeatureToggle("Enable Wall Hack + Aimbot", "Downloads and injects via GitHub URL", isWallHackEnabled, (v) {
-            setState(() => isWallHackEnabled = v);
-            ShizukuService.handleFeatureInjection(
-              context: context, featureName: "Wall Hack", enable: v,
-              setLoading: (loading) => setState(() => isDownloading = loading),
-            );
-          }),
-        ],
-      ),
+      appBar: AppBar(backgroundColor: AppGlobals.isDarkMode ? AppGlobals.surfaceCard : Colors.grey.shade200, iconTheme: IconThemeData(color: AppGlobals.isDarkMode ? Colors.white : Colors.black), title: const Text("WALL HACK MODULES", style: TextStyle(color: AppGlobals.neonYellow, fontWeight: FontWeight.w900, fontSize: 16))),
+      body: ListView(padding: const EdgeInsets.all(20), children: [ _buildFeatureToggle("Enable Wall Hack + Aimbot", "Downloads and injects via GitHub URL", isWallHackEnabled, (v) { setState(() => isWallHackEnabled = v); ShizukuService.handleFeatureInjection(context: context, featureName: "Wall Hack", enable: v, setLoading: (loading) => setState(() => isDownloading = loading)); }) ]),
     );
   }
-
   Widget _buildFeatureToggle(String title, String subtitle, bool val, Function(bool) onChanged) {
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: AppGlobals.isDarkMode ? AppGlobals.surfaceCard : Colors.grey.shade100, borderRadius: BorderRadius.circular(16), border: Border.all(color: val ? AppGlobals.neonYellow : Colors.white12, width: 1.5)),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: TextStyle(color: AppGlobals.isDarkMode ? Colors.white : Colors.black, fontWeight: FontWeight.bold, fontSize: 15)),
-                Text(subtitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
-              ],
-            ),
-          ),
-          isDownloading && val 
-            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: AppGlobals.neonYellow, strokeWidth: 2))
-            : CupertinoSwitch(activeColor: AppGlobals.neonYellow, value: val, onChanged: onChanged),
-        ],
-      ),
+      padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: AppGlobals.isDarkMode ? AppGlobals.surfaceCard : Colors.grey.shade100, borderRadius: BorderRadius.circular(16), border: Border.all(color: val ? AppGlobals.neonYellow : Colors.white12, width: 1.5)),
+      child: Row(children: [ Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [ Text(title, style: TextStyle(color: AppGlobals.isDarkMode ? Colors.white : Colors.black, fontWeight: FontWeight.bold, fontSize: 15)), Text(subtitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)) ])), isDownloading && val ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: AppGlobals.neonYellow, strokeWidth: 2)) : CupertinoSwitch(activeColor: AppGlobals.neonYellow, value: val, onChanged: onChanged) ]),
     );
   }
 }
 
 // ==========================================
-// 4. PAID OBB PAGE (Unlocked)
+// 4. PAID OBB PAGE
 // ==========================================
-class PaidObbPage extends StatefulWidget {
-  const PaidObbPage({super.key});
-  @override
-  State<PaidObbPage> createState() => _PaidObbPageState();
-}
-
+class PaidObbPage extends StatefulWidget { const PaidObbPage({super.key}); @override State<PaidObbPage> createState() => _PaidObbPageState(); }
 class _PaidObbPageState extends State<PaidObbPage> {
-  bool isObbEnabled = false;
-  bool isDownloading = false;
-
-  @override
-  Widget build(BuildContext context) {
+  bool isObbEnabled = false; bool isDownloading = false;
+  @override Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppGlobals.isDarkMode ? AppGlobals.darkBg : Colors.white,
-      appBar: AppBar(
-        backgroundColor: AppGlobals.isDarkMode ? AppGlobals.surfaceCard : Colors.grey.shade200,
-        iconTheme: IconThemeData(color: AppGlobals.isDarkMode ? Colors.white : Colors.black),
-        title: const Text("PAID OBB MODULES", style: TextStyle(color: AppGlobals.neonBlue, fontWeight: FontWeight.w900, fontSize: 16)),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          _buildFeatureToggle("Inject Paid OBB (Anti-Ban)", "Replaces OBB safely via Shizuku", isObbEnabled, (v) {
-            setState(() => isObbEnabled = v);
-            ShizukuService.handleFeatureInjection(
-              context: context, featureName: "Paid OBB", enable: v,
-              setLoading: (loading) => setState(() => isDownloading = loading),
-            );
-          }),
-        ],
-      ),
+      appBar: AppBar(backgroundColor: AppGlobals.isDarkMode ? AppGlobals.surfaceCard : Colors.grey.shade200, iconTheme: IconThemeData(color: AppGlobals.isDarkMode ? Colors.white : Colors.black), title: const Text("PAID OBB MODULES", style: TextStyle(color: AppGlobals.neonBlue, fontWeight: FontWeight.w900, fontSize: 16))),
+      body: ListView(padding: const EdgeInsets.all(20), children: [ _buildFeatureToggle("Inject Paid OBB (Anti-Ban)", "Replaces OBB safely via Shizuku", isObbEnabled, (v) { setState(() => isObbEnabled = v); ShizukuService.handleFeatureInjection(context: context, featureName: "Paid OBB", enable: v, setLoading: (loading) => setState(() => isDownloading = loading)); }) ]),
     );
   }
-
   Widget _buildFeatureToggle(String title, String subtitle, bool val, Function(bool) onChanged) {
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: AppGlobals.isDarkMode ? AppGlobals.surfaceCard : Colors.grey.shade100, borderRadius: BorderRadius.circular(16), border: Border.all(color: val ? AppGlobals.neonBlue : Colors.white12, width: 1.5)),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: TextStyle(color: AppGlobals.isDarkMode ? Colors.white : Colors.black, fontWeight: FontWeight.bold, fontSize: 15)),
-                Text(subtitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
-              ],
-            ),
-          ),
-          isDownloading && val 
-            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: AppGlobals.neonBlue, strokeWidth: 2))
-            : CupertinoSwitch(activeColor: AppGlobals.neonBlue, value: val, onChanged: onChanged),
-        ],
-      ),
+      padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: AppGlobals.isDarkMode ? AppGlobals.surfaceCard : Colors.grey.shade100, borderRadius: BorderRadius.circular(16), border: Border.all(color: val ? AppGlobals.neonBlue : Colors.white12, width: 1.5)),
+      child: Row(children: [ Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [ Text(title, style: TextStyle(color: AppGlobals.isDarkMode ? Colors.white : Colors.black, fontWeight: FontWeight.bold, fontSize: 15)), Text(subtitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)) ])), isDownloading && val ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: AppGlobals.neonBlue, strokeWidth: 2)) : CupertinoSwitch(activeColor: AppGlobals.neonBlue, value: val, onChanged: onChanged) ]),
     );
   }
 }
