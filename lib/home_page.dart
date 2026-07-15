@@ -182,10 +182,10 @@ class _HomePageState extends State<HomePage> {
                 children: [
                   Container(width: 50, height: 4, decoration: BoxDecoration(color: neonBlue, borderRadius: BorderRadius.circular(10))),
                   const SizedBox(height: 24),
-                  Text("GLOBAL RADAR CONTROL", style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 2)),
+                  const Text("GLOBAL RADAR CONTROL", style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 2)),
                   const SizedBox(height: 20),
                   ListTile(
-                    tileColor: Colors.black25,
+                    tileColor: Colors.black26, // ✅ Fixed Error Here (Changed from black25 to black26)
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     leading: Icon(Icons.cached_rounded, color: isShizukuConnected ? neonGreen : neonOrange),
                     title: const Text("Shizuku Status Core", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
