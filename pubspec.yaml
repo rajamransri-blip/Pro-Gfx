@@ -15,6 +15,7 @@ dependencies:
   path_provider: ^2.1.2
   permission_handler: ^11.3.1
   url_launcher: ^6.3.0
+  shared_preferences: ^2.2.2  # ✅ ADDED FOR SAVING UNLOCK & JSON DATA
 
 dev_dependencies:
   flutter_test:
