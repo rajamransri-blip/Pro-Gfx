@@ -35,13 +35,16 @@ jobs:
         run: |
           echo "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
 
-      # ✅ 2. INJECT FIREBASE & SHIZUKU TO GRADLE
+      # 🛠️ 2. FIXED: INJECT FIREBASE & SHIZUKU TO GRADLE (BULLETPROOF METHOD)
       - name: Inject Firebase and Shizuku to Gradle
         run: |
-          sed -i 's/dependencies {/dependencies {\n        classpath "com.google.gms:google-services:4.3.15"/g' android/build.gradle
+          # A. Root build.gradle ke ekdum top par classpath add karna
+          echo -e "buildscript {\n    repositories {\n        google()\n        mavenCentral()\n    }\n    dependencies {\n        classpath 'com.google.gms:google-services:4.4.1'\n    }\n}\n$(cat android/build.gradle)" > android/build.gradle
+          
+          # B. App build.gradle me plugins aur dependencies add karna
           echo "apply plugin: 'com.google.gms.google-services'" >> android/app/build.gradle
           echo "dependencies {" >> android/app/build.gradle
-          echo "    implementation platform('com.google.firebase:firebase-bom:32.1.1')" >> android/app/build.gradle
+          echo "    implementation platform('com.google.firebase:firebase-bom:33.1.0')" >> android/app/build.gradle
           echo "    implementation 'com.google.firebase:firebase-database'" >> android/app/build.gradle
           echo "    implementation 'dev.rikka.shizuku:api:12.1.0'" >> android/app/build.gradle
           echo "    implementation 'dev.rikka.shizuku:provider:12.1.0'" >> android/app/build.gradle
